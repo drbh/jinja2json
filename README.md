@@ -2,6 +2,12 @@
 
 Convert Jinja2 templates to JSON VM analysis and back. A CLI tool for analyzing Jinja2 template structure and reconstructing templates from their VM representations.
 
+## Installation
+
+```bash
+cargo install --git https://github.com/drbh/jinja2json.git
+```
+
 ## Usage
 
 ### Convert template to JSON
