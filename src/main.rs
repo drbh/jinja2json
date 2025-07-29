@@ -37,12 +37,12 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::ToJson { input, output, context } => {
-            handle_to_json(input, output, context)
-        }
-        Commands::ToJinja { input, output } => {
-            handle_to_jinja(input, output)
-        }
+        Commands::ToJson {
+            input,
+            output,
+            context,
+        } => handle_to_json(input, output, context),
+        Commands::ToJinja { input, output } => handle_to_jinja(input, output),
     };
 
     if let Err(e) = result {
@@ -51,9 +51,13 @@ fn main() {
     }
 }
 
-fn handle_to_json(input: String, output: Option<String>, context: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_to_json(
+    input: String,
+    output: Option<String>,
+    context: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let template_content = read_input(&input)?;
-    
+
     let test_context = if let Some(context_file) = context {
         let context_str = fs::read_to_string(&context_file)?;
         Some(serde_json::from_str(&context_str)?)
@@ -63,19 +67,22 @@ fn handle_to_json(input: String, output: Option<String>, context: Option<String>
 
     let template_path = if input == "-" { "stdin" } else { &input };
     let analysis = analyze_template(&template_content, template_path, test_context)?;
-    
+
     let json_output = serde_json::to_string_pretty(&analysis)?;
-    
+
     write_output(&json_output, output)?;
     Ok(())
 }
 
-fn handle_to_jinja(input: String, output: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_to_jinja(
+    input: String,
+    output: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let json_content = read_input(&input)?;
     let vm_analysis: Value = serde_json::from_str(&json_content)?;
-    
+
     let template = reconstruct_template_formatted(&vm_analysis)?;
-    
+
     write_output(&template, output)?;
     Ok(())
 }

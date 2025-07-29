@@ -1,9 +1,9 @@
 use minijinja::machinery::{ast, parse};
 use minijinja::{Environment, Error as MinijinjaError};
+use regex::{Captures, Regex};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
-use regex::Regex;
 
 /// A wrapper struct for Jinja2 templates
 #[derive(Debug, Clone)]
@@ -35,20 +35,14 @@ impl From<MinijinjaError> for TemplateError {
     }
 }
 
-
 /// VM instruction types for template analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum VmInstruction {
     #[serde(rename = "start_template")]
-    StartTemplate {
-        children: Vec<VmInstruction>,
-    },
+    StartTemplate { children: Vec<VmInstruction> },
     #[serde(rename = "emit_raw")]
-    EmitRaw {
-        content: String,
-        preview: String,
-    },
+    EmitRaw { content: String, preview: String },
     #[serde(rename = "emit_expr")]
     EmitExpr {
         expression: String,
@@ -67,6 +61,12 @@ pub enum VmInstruction {
         iterator: String,
         iterator_info: ExpressionInfo,
         body: Vec<VmInstruction>,
+    },
+    #[serde(rename = "set_variable")]
+    SetVariable {
+        target: String,
+        expression: String,
+        expression_info: ExpressionInfo,
     },
     #[serde(rename = "other")]
     Other {
@@ -155,8 +155,13 @@ pub fn analyze_template(
     test_context: Option<Value>,
 ) -> Result<VmAnalysis, TemplateError> {
     // Parse the template into AST
-    let ast = parse(template_source, template_path, Default::default(), Default::default())?;
-    
+    let ast = parse(
+        template_source,
+        template_path,
+        Default::default(),
+        Default::default(),
+    )?;
+
     // Initialize statistics
     let mut stats = VmStatistics {
         total_instructions: 0,
@@ -167,24 +172,24 @@ pub fn analyze_template(
         other_operations: 0,
         max_nesting_depth: 0,
     };
-    
+
     // Analyze VM operations
     let instructions = analyze_vm_operations(&ast, 0, &mut stats);
-    
+
     // Test rendering if context provided
     let rendered_output = if let Some(context) = test_context {
         Some(test_template_rendering(template_source, &context))
     } else {
         None
     };
-    
+
     // Create template info
     let template_info = TemplateInfo {
         path: template_path.to_string(),
         length: template_source.len(),
         preview: template_source[..200.min(template_source.len())].to_string(),
     };
-    
+
     Ok(VmAnalysis {
         template_info,
         instructions,
@@ -204,8 +209,15 @@ pub fn analyze_template(
 /// # Returns
 ///
 /// * `Result<VmInstruction, TemplateError>` - VM instruction tree or error
-pub fn analyze_template_instructions(template_source: &str) -> Result<VmInstruction, TemplateError> {
-    let ast = parse(template_source, "template", Default::default(), Default::default())?;
+pub fn analyze_template_instructions(
+    template_source: &str,
+) -> Result<VmInstruction, TemplateError> {
+    let ast = parse(
+        template_source,
+        "template",
+        Default::default(),
+        Default::default(),
+    )?;
     let mut stats = VmStatistics {
         total_instructions: 0,
         raw_emissions: 0,
@@ -215,34 +227,38 @@ pub fn analyze_template_instructions(template_source: &str) -> Result<VmInstruct
         other_operations: 0,
         max_nesting_depth: 0,
     };
-    
+
     Ok(analyze_vm_operations(&ast, 0, &mut stats))
 }
 
-fn analyze_vm_operations(node: &ast::Stmt, depth: usize, stats: &mut VmStatistics) -> VmInstruction {
+fn analyze_vm_operations(
+    node: &ast::Stmt,
+    depth: usize,
+    stats: &mut VmStatistics,
+) -> VmInstruction {
     stats.total_instructions += 1;
     stats.max_nesting_depth = stats.max_nesting_depth.max(depth);
-    
+
     match node {
         ast::Stmt::Template(template) => {
             let mut children = Vec::new();
-            
+
             for child in &template.children {
                 children.push(analyze_vm_operations(child, depth + 1, stats));
             }
-            
+
             VmInstruction::StartTemplate { children }
         }
         ast::Stmt::EmitRaw(raw) => {
             stats.raw_emissions += 1;
-            
+
             let preview = if raw.raw.len() > 30 {
                 format!("{}...", &raw.raw[..27])
             } else {
                 raw.raw.to_string()
             };
             let escaped_preview = preview.replace(['\n', '\r'], "\\n");
-            
+
             VmInstruction::EmitRaw {
                 content: raw.raw.to_string(),
                 preview: escaped_preview,
@@ -250,10 +266,10 @@ fn analyze_vm_operations(node: &ast::Stmt, depth: usize, stats: &mut VmStatistic
         }
         ast::Stmt::EmitExpr(emit) => {
             stats.expression_emissions += 1;
-            
+
             let expr_info = analyze_expression(&emit.expr);
             let expr_description = describe_expression(&emit.expr);
-            
+
             VmInstruction::EmitExpr {
                 expression: expr_description,
                 variable_info: expr_info,
@@ -261,20 +277,20 @@ fn analyze_vm_operations(node: &ast::Stmt, depth: usize, stats: &mut VmStatistic
         }
         ast::Stmt::IfCond(if_stmt) => {
             stats.conditionals += 1;
-            
+
             let condition_info = analyze_expression(&if_stmt.expr);
             let condition_description = describe_expression(&if_stmt.expr);
-            
+
             let mut true_branch = Vec::new();
             for stmt in &if_stmt.true_body {
                 true_branch.push(analyze_vm_operations(stmt, depth + 1, stats));
             }
-            
+
             let mut false_branch = Vec::new();
             for stmt in &if_stmt.false_body {
                 false_branch.push(analyze_vm_operations(stmt, depth + 1, stats));
             }
-            
+
             VmInstruction::IfCondition {
                 condition: condition_description,
                 condition_info,
@@ -284,16 +300,16 @@ fn analyze_vm_operations(node: &ast::Stmt, depth: usize, stats: &mut VmStatistic
         }
         ast::Stmt::ForLoop(for_stmt) => {
             stats.loops += 1;
-            
+
             let target = format!("{:?}", for_stmt.target);
             let iterator_info = analyze_expression(&for_stmt.iter);
             let iterator_description = describe_expression(&for_stmt.iter);
-            
+
             let mut body = Vec::new();
             for stmt in &for_stmt.body {
                 body.push(analyze_vm_operations(stmt, depth + 1, stats));
             }
-            
+
             VmInstruction::ForLoop {
                 target,
                 iterator: iterator_description,
@@ -301,9 +317,22 @@ fn analyze_vm_operations(node: &ast::Stmt, depth: usize, stats: &mut VmStatistic
                 body,
             }
         }
+        ast::Stmt::Set(set_stmt) => {
+            stats.other_operations += 1;
+
+            let target = format!("{:?}", set_stmt.target);
+            let expr_info = analyze_expression(&set_stmt.expr);
+            let expr_description = describe_expression(&set_stmt.expr);
+
+            VmInstruction::SetVariable {
+                target,
+                expression: expr_description,
+                expression_info: expr_info,
+            }
+        }
         _ => {
             stats.other_operations += 1;
-            
+
             VmInstruction::Other {
                 operation_type: std::any::type_name_of_val(&node).to_string(),
                 description: format!("{:?}", node).chars().take(100).collect(),
@@ -382,6 +411,12 @@ fn analyze_expression(expr: &ast::Expr) -> ExpressionInfo {
             tests: Vec::new(),
             is_complex: true,
         },
+        ast::Expr::UnaryOp(unaryop) => {
+            let mut base_info = analyze_expression(&unaryop.expr);
+            base_info.expr_type = "unary_operation".to_string();
+            base_info.is_complex = true;
+            base_info
+        }
         _ => ExpressionInfo {
             expr_type: "other".to_string(),
             variable_name: None,
@@ -474,14 +509,58 @@ fn describe_expression(expr: &ast::Expr) -> String {
             let right = describe_expression(&binop.right);
             // For now, we'll infer the operator from the debug string
             let debug_str = format!("{:?}", binop);
-            let op = if debug_str.contains("Eq") {
-                "=="
-            } else if debug_str.contains("Ne") {
-                "!="
+
+            // Use regex to extract the exact operator from the debug string
+            // Look for patterns like "op: And" or "And" at the beginning of the struct
+            let op = if let Some(caps) = Regex::new(r"BinOp \{ left: .*, op: ([^,]+),")
+                .unwrap()
+                .captures(&debug_str)
+            {
+                match caps.get(1).map(|m| m.as_str()) {
+                    Some("And") => "and",
+                    Some("Or") => "or",
+                    Some("Eq") => "==",
+                    Some("Ne") => "!=",
+                    Some("Add") => "+",
+                    Some("Sub") => "-",
+                    Some("Mul") => "*",
+                    Some("Div") => "/",
+                    Some("Lt") => "<",
+                    Some("Le") => "<=",
+                    Some("Gt") => ">",
+                    Some("Ge") => ">=",
+                    Some("In") => "in",
+                    Some("NotIn") => "not in",
+                    _ => "==",
+                }
             } else {
-                "=="
+                // Fallback to the old method if regex doesn't match
+                if debug_str.starts_with("BinOp") && debug_str.contains("And") {
+                    "and"
+                } else if debug_str.starts_with("BinOp") && debug_str.contains("Or") {
+                    "or"
+                } else if debug_str.starts_with("BinOp") && debug_str.contains("Eq") {
+                    "=="
+                } else if debug_str.starts_with("BinOp") && debug_str.contains("In") {
+                    "in"
+                } else {
+                    "=="
+                }
             };
             format!("{} {} {}", left, op, right)
+        }
+        ast::Expr::UnaryOp(unaryop) => {
+            let expr = describe_expression(&unaryop.expr);
+            // Infer the operator from the debug string
+            let debug_str = format!("{:?}", unaryop);
+            let op = if debug_str.contains("Not") {
+                "not "
+            } else if debug_str.contains("Neg") {
+                "-"
+            } else {
+                "!"
+            };
+            format!("{}{}", op, expr)
         }
         _ => format!("{:?}", expr).chars().take(100).collect(),
     }
@@ -490,22 +569,20 @@ fn describe_expression(expr: &ast::Expr) -> String {
 fn test_template_rendering(template_source: &str, context: &Value) -> RenderedOutput {
     let env = Environment::new();
     match env.template_from_str(template_source) {
-        Ok(template) => {
-            match template.render(context) {
-                Ok(result) => RenderedOutput {
-                    success: true,
-                    length: result.len(),
-                    preview: result[..200.min(result.len())].to_string(),
-                    error: None,
-                },
-                Err(e) => RenderedOutput {
-                    success: false,
-                    length: 0,
-                    preview: String::new(),
-                    error: Some(format!("{}", e)),
-                },
-            }
-        }
+        Ok(template) => match template.render(context) {
+            Ok(result) => RenderedOutput {
+                success: true,
+                length: result.len(),
+                preview: result[..200.min(result.len())].to_string(),
+                error: None,
+            },
+            Err(e) => RenderedOutput {
+                success: false,
+                length: 0,
+                preview: String::new(),
+                error: Some(format!("{}", e)),
+            },
+        },
         Err(e) => RenderedOutput {
             success: false,
             length: 0,
@@ -549,16 +626,16 @@ fn test_template_rendering(template_source: &str, context: &Value) -> RenderedOu
 pub fn json_to_template(template: &Template, data: &Value) -> Result<String, TemplateError> {
     // Create a new Jinja environment
     let mut env = Environment::new();
-    
+
     // Add the template to the environment
     env.add_template("template", &template.template)?;
-    
+
     // Get the template from the environment
     let tmpl = env.get_template("template")?;
-    
+
     // Render the template with the JSON data
     let rendered = tmpl.render(data)?;
-    
+
     Ok(rendered)
 }
 
@@ -602,13 +679,13 @@ pub fn json_to_template(template: &Template, data: &Value) -> Result<String, Tem
 /// ```
 pub fn reconstruct_template(vm_analysis: &Value) -> Result<String, TemplateError> {
     let mut template = String::new();
-    
+
     if let Some(instructions) = vm_analysis.get("instructions") {
         if let Some(children) = instructions.get("children") {
             reconstruct_children(&mut template, children, 0);
         }
     }
-    
+
     Ok(template)
 }
 
@@ -639,7 +716,7 @@ fn reconstruct_children(template: &mut String, children: &Value, indent: usize) 
 
 fn reconstruct_instruction(template: &mut String, instruction: &Value, indent: usize) -> () {
     let _indent_str = " ".repeat(indent);
-    
+
     match instruction.get("type").and_then(|t| t.as_str()) {
         Some("emit_raw") => {
             if let Some(content) = instruction.get("content").and_then(|c| c.as_str()) {
@@ -662,69 +739,90 @@ fn reconstruct_instruction(template: &mut String, instruction: &Value, indent: u
             }
         }
         Some("if_condition") => {
-            let condition = if let Some(cond_str) = instruction.get("condition").and_then(|c| c.as_str()) {
-                // First try to use the condition string directly if it looks complete
-                if cond_str.contains(" is defined") || !cond_str.contains("BinOp") {
-                    parse_simple_condition(cond_str)
+            let condition =
+                if let Some(cond_str) = instruction.get("condition").and_then(|c| c.as_str()) {
+                    // First try to use the condition string directly if it looks complete
+                    if cond_str.contains(" is defined") || !cond_str.contains("BinOp") {
+                        parse_simple_condition(cond_str)
+                    } else {
+                        // Otherwise try to reconstruct from truncated BinOp
+                        reconstruct_condition(
+                            instruction.get("condition_info"),
+                            instruction.get("condition"),
+                        )
+                    }
                 } else {
-                    // Otherwise try to reconstruct from truncated BinOp
-                    reconstruct_condition(instruction.get("condition_info"), instruction.get("condition"))
-                }
-            } else {
-                "condition".to_string()
-            };
-            
+                    "condition".to_string()
+                };
+
             template.push_str("{% if ");
             template.push_str(&condition);
             template.push_str(" %}");
-            
+
             if let Some(true_branch) = instruction.get("true_branch") {
                 reconstruct_children(template, true_branch, indent);
             }
-            
+
             if let Some(false_branch) = instruction.get("false_branch") {
                 if let Some(arr) = false_branch.as_array() {
                     if !arr.is_empty() {
                         // Check if this is an elif pattern
-                        let is_elif = arr.get(0)
+                        let is_elif = arr
+                            .get(0)
                             .and_then(|first| first.get("type"))
                             .and_then(|t| t.as_str())
                             .map(|t| t == "if_condition")
                             .unwrap_or(false);
-                        
+
                         if is_elif {
                             // Process the nested if as an elif
                             if let Some(first_inst) = arr.get(0) {
-                                if let Some(cond_str) = first_inst.get("condition").and_then(|c| c.as_str()) {
-                                    let condition = if cond_str.contains(" is defined") || !cond_str.contains("BinOp") {
+                                if let Some(cond_str) =
+                                    first_inst.get("condition").and_then(|c| c.as_str())
+                                {
+                                    let condition = if cond_str.contains(" is defined")
+                                        || !cond_str.contains("BinOp")
+                                    {
                                         parse_simple_condition(cond_str)
                                     } else {
-                                        reconstruct_condition(first_inst.get("condition_info"), first_inst.get("condition"))
+                                        reconstruct_condition(
+                                            first_inst.get("condition_info"),
+                                            first_inst.get("condition"),
+                                        )
                                     };
-                                    
+
                                     template.push_str("{% elif ");
                                     template.push_str(&condition);
                                     template.push_str(" %}");
-                                    
+
                                     if let Some(true_branch) = first_inst.get("true_branch") {
                                         reconstruct_children(template, true_branch, indent);
                                     }
-                                    
+
                                     // Continue with any remaining false branch
                                     if let Some(false_branch) = first_inst.get("false_branch") {
                                         if let Some(fb_arr) = false_branch.as_array() {
                                             if !fb_arr.is_empty() {
-                                                let next_is_elif = fb_arr.get(0)
+                                                let next_is_elif = fb_arr
+                                                    .get(0)
                                                     .and_then(|i| i.get("type"))
                                                     .and_then(|t| t.as_str())
                                                     .map(|t| t == "if_condition")
                                                     .unwrap_or(false);
-                                                
+
                                                 if next_is_elif {
-                                                    reconstruct_children(template, false_branch, indent);
+                                                    reconstruct_children(
+                                                        template,
+                                                        false_branch,
+                                                        indent,
+                                                    );
                                                 } else {
                                                     template.push_str("{% else %}");
-                                                    reconstruct_children(template, false_branch, indent);
+                                                    reconstruct_children(
+                                                        template,
+                                                        false_branch,
+                                                        indent,
+                                                    );
                                                 }
                                             }
                                         }
@@ -738,33 +836,56 @@ fn reconstruct_instruction(template: &mut String, instruction: &Value, indent: u
                     }
                 }
             }
-            
+
             template.push_str("{% endif %}");
         }
         Some("for_loop") => {
             if let Some(target) = instruction.get("target").and_then(|t| t.as_str()) {
                 // Extract variable name from "Var { id: \"variable\" } @ ..."
                 let var_name = extract_var_name(target);
-                
-                let iterator = if let Some(iter) = instruction.get("iterator").and_then(|i| i.as_str()) {
-                    parse_expression(iter)
-                } else if let Some(iter_info) = instruction.get("iterator_info") {
-                    reconstruct_expression(iter_info)
-                } else {
-                    "items".to_string()
-                };
-                
+
+                let iterator =
+                    if let Some(iter) = instruction.get("iterator").and_then(|i| i.as_str()) {
+                        parse_expression(iter)
+                    } else if let Some(iter_info) = instruction.get("iterator_info") {
+                        reconstruct_expression(iter_info)
+                    } else {
+                        "items".to_string()
+                    };
+
                 template.push_str("{% for ");
                 template.push_str(&var_name);
                 template.push_str(" in ");
                 template.push_str(&iterator);
                 template.push_str(" %}");
-                
+
                 if let Some(body) = instruction.get("body") {
                     reconstruct_children(template, body, indent + 2);
                 }
-                
+
                 template.push_str("{% endfor %}");
+            }
+        }
+        Some("set_variable") => {
+            if let Some(target) = instruction.get("target").and_then(|t| t.as_str()) {
+                // Extract variable name from "Var { id: \"variable\" } @ ..."
+                let var_name = extract_var_name(target);
+
+                let expression = if let Some(expr_str) =
+                    instruction.get("expression").and_then(|e| e.as_str())
+                {
+                    parse_expression(expr_str)
+                } else if let Some(expr_info) = instruction.get("expression_info") {
+                    reconstruct_expression(expr_info)
+                } else {
+                    "value".to_string()
+                };
+
+                template.push_str("{% set ");
+                template.push_str(&var_name);
+                template.push_str(" = ");
+                template.push_str(&expression);
+                template.push_str(" %}");
             }
         }
         _ => {}
@@ -773,18 +894,31 @@ fn reconstruct_instruction(template: &mut String, instruction: &Value, indent: u
 
 fn extract_var_name(target: &str) -> String {
     // Extract from patterns like "Var { id: \"variable\" } @ ..."
-    if let Some(caps) = Regex::new(r#"Var \{ id: "(\w+)" \}"#).unwrap().captures(target) {
+    if let Some(caps) = Regex::new(r#"Var \{ id: "([^"]+)" \}"#)
+        .unwrap()
+        .captures(target)
+    {
         return caps[1].to_string();
     }
+
+    // Handle namespace assignments like "GetAttr { expr: Var { id: \"ns\" }, name: \"is_first\" }"
+    if let Some(caps) =
+        Regex::new(r#"GetAttr \{ expr: Var \{ id: "([^"]+)" \}[^,]*, name: "([^"]+)" \}"#)
+            .unwrap()
+            .captures(target)
+    {
+        return format!("{}.{}", &caps[1], &caps[2]);
+    }
+
     "item".to_string()
 }
 
 fn reconstruct_expression(var_info: &Value) -> String {
     let mut expr = String::new();
-    
+
     if let Some(var_name) = var_info.get("variable_name").and_then(|v| v.as_str()) {
         expr.push_str(var_name);
-        
+
         if let Some(attrs) = var_info.get("attributes").and_then(|a| a.as_array()) {
             for attr in attrs {
                 if let Some(attr_str) = attr.as_str() {
@@ -793,7 +927,7 @@ fn reconstruct_expression(var_info: &Value) -> String {
                 }
             }
         }
-        
+
         if let Some(filters) = var_info.get("filters").and_then(|f| f.as_array()) {
             for filter in filters {
                 if let Some(filter_str) = filter.as_str() {
@@ -803,29 +937,100 @@ fn reconstruct_expression(var_info: &Value) -> String {
             }
         }
     }
-    
+
     expr
 }
 
 fn parse_expression(expr: &str) -> String {
     let mut result = expr.to_string();
-    
+
+    // First, handle some specific problematic patterns before general transformations
+    // Fix malformed operator chains like "== not" or "== and" or "== =="
+    let malformed_chain_re = Regex::new(r"==\s+(not|and|or|==)\s+").unwrap();
+    result = malformed_chain_re.replace_all(&result, " $1 ").to_string();
+
+    // Fix cases where we have multiple == in a row
+    let double_eq_re = Regex::new(r"==\s+==").unwrap();
+    result = double_eq_re.replace_all(&result, " and ").to_string();
+
+    // Apply transformations in multiple passes to handle nested structures
+    for _ in 0..3 {
+        // Remove location information like @ 56:24-56:41 first
+        let location_re = Regex::new(r" @ \d+:\d+-\d+:\d+").unwrap();
+        result = location_re.replace_all(&result, "").to_string();
+
+        // Handle Pos() wrappers around expressions
+        let pos_re = Regex::new(r"Pos\(([^)]+)\)").unwrap();
+        result = pos_re.replace_all(&result, "$1").to_string();
+
+        // Handle Const { value: "string" } patterns
+        let const_value_re = Regex::new(r#"Const \{ value: "([^"]*)" \}"#).unwrap();
+        result = const_value_re.replace_all(&result, "\"$1\"").to_string();
+
+        // Handle Const { value: number } patterns
+        let const_num_re = Regex::new(r"Const \{ value: ([^}]+) \}").unwrap();
+        result = const_num_re.replace_all(&result, "$1").to_string();
+
+        // Remove any remaining Var { id: "name" } patterns
+        let var_id_re = Regex::new(r#"Var \{ id: "([^"]+)" \}"#).unwrap();
+        result = var_id_re.replace_all(&result, "$1").to_string();
+
+        // Handle GetAttr expressions like GetAttr { expr: Var { id: "param_fields" }, name: "required" }
+        let getattr_re = Regex::new(r#"GetAttr \{ expr: ([^,{}]+), name: "([^"]+)" \}"#).unwrap();
+        result = getattr_re.replace_all(&result, "$1.$2").to_string();
+
+        // Handle Kwarg patterns like Kwarg("key", value) -> key=value
+        let kwarg_re = Regex::new(r#"Kwarg\("([^"]+)", ([^)]+)\)"#).unwrap();
+        result = kwarg_re.replace_all(&result, "$1=$2").to_string();
+
+        // Handle Call expressions with arguments
+        // Pattern: Call { expr: function_name, args: [arg1, arg2, ...] }
+        let call_with_args_re =
+            Regex::new(r"Call \{ expr: ([^,{}]+), args: \[([^\]]*)\] \}").unwrap();
+        result = call_with_args_re
+            .replace_all(&result, |caps: &Captures| {
+                let func_name = &caps[1];
+                let args_str = &caps[2];
+
+                if args_str.trim().is_empty() {
+                    format!("{}()", func_name)
+                } else {
+                    // Split arguments and clean them up
+                    let args: Vec<&str> = args_str.split(", ").collect();
+                    let cleaned_args: Vec<String> =
+                        args.iter().map(|arg| arg.trim().to_string()).collect();
+                    format!("{}({})", func_name, cleaned_args.join(", "))
+                }
+            })
+            .to_string();
+    }
+
     // Handle constant strings - const("string") -> "string"
     let const_str_re = Regex::new(r#"const\("([^"]*)"\)"#).unwrap();
     result = const_str_re.replace_all(&result, "\"$1\"").to_string();
-    
+
     // Handle simple constants - const(value) -> value
     let const_re = Regex::new(r"const\(([^)]+)\)").unwrap();
     result = const_re.replace_all(&result, "$1").to_string();
-    
+
     // Replace var(...) with just the variable name
     let var_re = Regex::new(r"var\(([^)]+)\)").unwrap();
     result = var_re.replace_all(&result, "$1").to_string();
-    
+
+    // Clean up any remaining Kwarg patterns that might have been missed
+    // Handle cases where Kwarg values are constants or other expressions
+    let kwarg_const_re = Regex::new(r#"Kwarg\("([^"]+)", "([^"]*)"\)"#).unwrap();
+    result = kwarg_const_re
+        .replace_all(&result, r#"$1="$2""#)
+        .to_string();
+
+    let kwarg_bool_re = Regex::new(r#"Kwarg\("([^"]+)", (true|false)\)"#).unwrap();
+    result = kwarg_bool_re.replace_all(&result, "$1=$2").to_string();
+
     // Handle dictionary access patterns like [const("role")]
     let dict_re = Regex::new(r#"\["([^"]+)"\]"#).unwrap();
     result = dict_re.replace_all(&result, "['$1']").to_string();
-    
+
     // Handle filter arguments like tojson(Kwarg("indent", Const { value: 2 }), ...)
     // Extract just the filter name for now
     if result.contains(" | ") {
@@ -842,10 +1047,11 @@ fn parse_expression(expr: &str) -> String {
             }
         }
     }
-    
-    // Handle string concatenation (== should be +)
-    result = result.replace(" == ", " + ");
-    
+
+    // Handle string concatenation (== should be +) but not in logical contexts
+    // Only replace == with + if it's actually string concatenation, not comparison
+    // This is a heuristic - we should be more careful about this replacement
+
     result
 }
 
@@ -859,7 +1065,7 @@ fn reconstruct_condition(cond_info: Option<&Value>, raw_condition: Option<&Value
             if test_expr == "test_expression" {
                 if let Some(var_name) = info.get("variable_name").and_then(|v| v.as_str()) {
                     let mut cond = var_name.to_string();
-                    
+
                     if let Some(attrs) = info.get("attributes").and_then(|a| a.as_array()) {
                         for attr in attrs {
                             if let Some(attr_str) = attr.as_str() {
@@ -868,7 +1074,7 @@ fn reconstruct_condition(cond_info: Option<&Value>, raw_condition: Option<&Value
                             }
                         }
                     }
-                    
+
                     if let Some(tests) = info.get("tests").and_then(|t| t.as_array()) {
                         for test in tests {
                             if let Some(test_str) = test.as_str() {
@@ -877,62 +1083,107 @@ fn reconstruct_condition(cond_info: Option<&Value>, raw_condition: Option<&Value
                             }
                         }
                     }
-                    
+
                     return cond;
                 }
             }
         }
     }
-    
-    // Fallback: try to parse from raw condition string  
+
+    // Fallback: try to parse from raw condition string
     if let Some(raw) = raw_condition.and_then(|r| r.as_str()) {
         return parse_expression(raw);
     }
-    
+
     "condition".to_string()
 }
 
 fn format_template(template: &str) -> String {
     let mut result = template.to_string();
-    
+
     // Add newlines after }} when followed by {{
     result = result.replace("}}{{", "}}\n{{");
-    
+
+    // Add newlines after }} when followed by {% (expression followed by control structure)
+    result = result.replace("}}{%", "}}\n{%");
+
     // Add newlines after control structures when followed by other structures
     result = result.replace("{% endif %}{%", "{% endif %}\n{%");
     result = result.replace("{% endfor %}{%", "{% endfor %}\n{%");
-    
+    result = result.replace("{% else %}{%", "{% else %}\n{%");
+    result = result.replace("{% elif ", "{% elif ");
+
+    // Add newlines between consecutive end tags
+    result = result.replace("{% endif %}{% endfor %}", "{% endif %}\n{% endfor %}");
+    result = result.replace("{% endfor %}{% endif %}", "{% endfor %}\n{% endif %}");
+
+    // Add newlines when control structures are followed by other control structures
+    result = result.replace("%}{% for ", "%}\n{% for ");
+    result = result.replace("%}{% if ", "%}\n{% if ");
+    result = result.replace("%}{% elif ", "%}\n{% elif ");
+    result = result.replace("%}{% else %}", "%}\n{% else %}");
+
     // Add newlines before end control structures when preceded by expressions
     result = result.replace("}}{% endif %}", "}}\n{% endif %}");
     result = result.replace("}}{% endfor %}", "}}\n{% endfor %}");
-    
+
     // Add newlines after control structures when followed by expressions
     let for_expr_re = Regex::new(r"(%}\{\{)").unwrap();
     result = for_expr_re.replace_all(&result, "%}\n{{").to_string();
-    
+
+    // Handle cases where templates have no spacing between tags
+    let no_space_re = Regex::new(r"(%})(\{%)").unwrap();
+    result = no_space_re.replace_all(&result, "$1\n$2").to_string();
+
     // Add basic indentation for expressions inside control blocks
     let lines: Vec<&str> = result.split('\n').collect();
     let mut formatted_lines = Vec::new();
     let mut indent_level: usize = 0;
-    
+
     for line in lines {
         let trimmed = line.trim();
-        
-        // Decrease indent for end tags
-        if trimmed.starts_with("{% endif %}") || trimmed.starts_with("{% endfor %}") {
-            indent_level = indent_level.saturating_sub(1);
+
+        // Skip empty lines
+        if trimmed.is_empty() {
+            formatted_lines.push(String::new());
+            continue;
         }
-        
+
+        // Decrease indent for end tags and else/elif
+        if trimmed.starts_with("{% endif %}")
+            || trimmed.starts_with("{% endfor %}")
+            || trimmed.starts_with("{% else %}")
+            || trimmed.starts_with("{% elif ")
+        {
+            if trimmed.starts_with("{% endif %}") || trimmed.starts_with("{% endfor %}") {
+                indent_level = indent_level.saturating_sub(1);
+            } else if trimmed.starts_with("{% else %}") || trimmed.starts_with("{% elif ") {
+                // else/elif should be at the same level as the if
+                let current_indent = if indent_level > 0 {
+                    indent_level - 1
+                } else {
+                    0
+                };
+                let indent = "  ".repeat(current_indent);
+                formatted_lines.push(format!("{}{}", indent, trimmed));
+                continue;
+            }
+        }
+
         // Add indentation
         let indent = "  ".repeat(indent_level);
         formatted_lines.push(format!("{}{}", indent, trimmed));
-        
+
         // Increase indent for start tags
-        if trimmed.starts_with("{% if ") || trimmed.starts_with("{% elif ") || trimmed.starts_with("{% for ") {
+        if trimmed.starts_with("{% if ")
+            || trimmed.starts_with("{% elif ")
+            || trimmed.starts_with("{% else %}")
+            || trimmed.starts_with("{% for ")
+        {
             indent_level += 1;
         }
     }
-    
+
     formatted_lines.join("\n")
 }
 
@@ -946,11 +1197,11 @@ mod tests {
         let template = Template {
             template: "Hello {{ name }}!".to_string(),
         };
-        
+
         let data = json!({
             "name": "World"
         });
-        
+
         let result = json_to_template(&template, &data).unwrap();
         assert_eq!(result, "Hello World!");
     }
@@ -960,11 +1211,11 @@ mod tests {
         let template = Template {
             template: "{% for item in items %}{{ item }} {% endfor %}".to_string(),
         };
-        
+
         let data = json!({
             "items": ["apple", "banana", "cherry"]
         });
-        
+
         let result = json_to_template(&template, &data).unwrap();
         assert_eq!(result, "apple banana cherry ");
     }
@@ -974,18 +1225,18 @@ mod tests {
         let template = Template {
             template: "{% if show %}Visible{% else %}Hidden{% endif %}".to_string(),
         };
-        
+
         let data = json!({
             "show": true
         });
-        
+
         let result = json_to_template(&template, &data).unwrap();
         assert_eq!(result, "Visible");
-        
+
         let data = json!({
             "show": false
         });
-        
+
         let result = json_to_template(&template, &data).unwrap();
         assert_eq!(result, "Hidden");
     }
@@ -995,20 +1246,21 @@ mod tests {
         let template = Template {
             template: "Hello {{ missing_var }}!".to_string(),
         };
-        
+
         let data = json!({});
-        
+
         let result = json_to_template(&template, &data).unwrap();
         // By default, minijinja renders undefined variables as empty strings
         assert_eq!(result, "Hello !");
     }
-    
+
     #[test]
     fn test_complex_nested_data() {
         let template = Template {
-            template: "User: {{ user.name }}, Age: {{ user.age }}, City: {{ user.address.city }}".to_string(),
+            template: "User: {{ user.name }}, Age: {{ user.age }}, City: {{ user.address.city }}"
+                .to_string(),
         };
-        
+
         let data = json!({
             "user": {
                 "name": "John",
@@ -1018,7 +1270,7 @@ mod tests {
                 }
             }
         });
-        
+
         let result = json_to_template(&template, &data).unwrap();
         assert_eq!(result, "User: John, Age: 25, City: New York");
     }
