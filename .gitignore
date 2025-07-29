@@ -1,0 +1,8 @@
+/target
+.bak
+.claude
+*.j2
+*.json
+!templates/chat_template.j2
+!templates/analysis.json
+!templates/reconstructed.j2

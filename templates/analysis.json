@@ -1,0 +1,625 @@
+{
+  "template_info": {
+    "path": "templates/chat_template.j2",
+    "length": 1404,
+    "preview": "{% if bos_token is defined %}{{ bos_token }}{% endif %}\n\n{% if date_string is defined %}{{ date_string }}{% endif %}\n\n{% for message in messages %}\n  {% if message.role == \"system\" %}\n    <system>{{ m"
+  },
+  "instructions": {
+    "type": "start_template",
+    "children": [
+      {
+        "type": "if_condition",
+        "condition": "var(bos_token) is defined",
+        "condition_info": {
+          "expr_type": "test_expression",
+          "variable_name": "bos_token",
+          "attributes": [],
+          "filters": [],
+          "tests": [
+            "defined"
+          ],
+          "is_complex": true
+        },
+        "true_branch": [
+          {
+            "type": "emit_expr",
+            "expression": "var(bos_token)",
+            "variable_info": {
+              "expr_type": "variable",
+              "variable_name": "bos_token",
+              "attributes": [],
+              "filters": [],
+              "tests": [],
+              "is_complex": false
+            }
+          }
+        ],
+        "false_branch": []
+      },
+      {
+        "type": "emit_raw",
+        "content": "\n\n",
+        "preview": "\\n\\n"
+      },
+      {
+        "type": "if_condition",
+        "condition": "var(date_string) is defined",
+        "condition_info": {
+          "expr_type": "test_expression",
+          "variable_name": "date_string",
+          "attributes": [],
+          "filters": [],
+          "tests": [
+            "defined"
+          ],
+          "is_complex": true
+        },
+        "true_branch": [
+          {
+            "type": "emit_expr",
+            "expression": "var(date_string)",
+            "variable_info": {
+              "expr_type": "variable",
+              "variable_name": "date_string",
+              "attributes": [],
+              "filters": [],
+              "tests": [],
+              "is_complex": false
+            }
+          }
+        ],
+        "false_branch": []
+      },
+      {
+        "type": "emit_raw",
+        "content": "\n\n",
+        "preview": "\\n\\n"
+      },
+      {
+        "type": "for_loop",
+        "target": "Var { id: \"message\" } @ 5:7-5:14",
+        "iterator": "var(messages)",
+        "iterator_info": {
+          "expr_type": "variable",
+          "variable_name": "messages",
+          "attributes": [],
+          "filters": [],
+          "tests": [],
+          "is_complex": false
+        },
+        "body": [
+          {
+            "type": "emit_raw",
+            "content": "\n  ",
+            "preview": "\\n  "
+          },
+          {
+            "type": "if_condition",
+            "condition": "var(message).role == const(\"system\")",
+            "condition_info": {
+              "expr_type": "other",
+              "variable_name": null,
+              "attributes": [],
+              "filters": [],
+              "tests": [],
+              "is_complex": true
+            },
+            "true_branch": [
+              {
+                "type": "emit_raw",
+                "content": "\n    <system>",
+                "preview": "\\n    <system>"
+              },
+              {
+                "type": "emit_expr",
+                "expression": "var(message).content | escape",
+                "variable_info": {
+                  "expr_type": "filtered_expression",
+                  "variable_name": "message",
+                  "attributes": [
+                    "content"
+                  ],
+                  "filters": [
+                    "escape"
+                  ],
+                  "tests": [],
+                  "is_complex": true
+                }
+              },
+              {
+                "type": "emit_raw",
+                "content": "</system>\n  ",
+                "preview": "</system>\\n  "
+              }
+            ],
+            "false_branch": [
+              {
+                "type": "if_condition",
+                "condition": "var(message).role == const(\"user\")",
+                "condition_info": {
+                  "expr_type": "other",
+                  "variable_name": null,
+                  "attributes": [],
+                  "filters": [],
+                  "tests": [],
+                  "is_complex": true
+                },
+                "true_branch": [
+                  {
+                    "type": "emit_raw",
+                    "content": "\n    <user>",
+                    "preview": "\\n    <user>"
+                  },
+                  {
+                    "type": "emit_expr",
+                    "expression": "var(message).content | escape",
+                    "variable_info": {
+                      "expr_type": "filtered_expression",
+                      "variable_name": "message",
+                      "attributes": [
+                        "content"
+                      ],
+                      "filters": [
+                        "escape"
+                      ],
+                      "tests": [],
+                      "is_complex": true
+                    }
+                  },
+                  {
+                    "type": "emit_raw",
+                    "content": "</user>\n  ",
+                    "preview": "</user>\\n  "
+                  }
+                ],
+                "false_branch": [
+                  {
+                    "type": "if_condition",
+                    "condition": "var(message)[const(\"role\")] == const(\"assistant\")",
+                    "condition_info": {
+                      "expr_type": "other",
+                      "variable_name": null,
+                      "attributes": [],
+                      "filters": [],
+                      "tests": [],
+                      "is_complex": true
+                    },
+                    "true_branch": [
+                      {
+                        "type": "emit_raw",
+                        "content": "\n    <assistant>\n    ",
+                        "preview": "\\n    <assistant>\\n    "
+                      },
+                      {
+                        "type": "if_condition",
+                        "condition": "var(messages).tool_calls is defined",
+                        "condition_info": {
+                          "expr_type": "test_expression",
+                          "variable_name": "messages",
+                          "attributes": [
+                            "tool_calls"
+                          ],
+                          "filters": [],
+                          "tests": [
+                            "defined"
+                          ],
+                          "is_complex": true
+                        },
+                        "true_branch": [
+                          {
+                            "type": "emit_raw",
+                            "content": "\n      ",
+                            "preview": "\\n      "
+                          },
+                          {
+                            "type": "for_loop",
+                            "target": "Var { id: \"tool_call\" } @ 13:13-13:22",
+                            "iterator": "var(message).tool_calls",
+                            "iterator_info": {
+                              "expr_type": "attribute_access",
+                              "variable_name": "message",
+                              "attributes": [
+                                "tool_calls"
+                              ],
+                              "filters": [],
+                              "tests": [],
+                              "is_complex": true
+                            },
+                            "body": [
+                              {
+                                "type": "emit_raw",
+                                "content": "\n        <tool_call>\n        <tool_name>",
+                                "preview": "\\n        <tool_call>\\n      ..."
+                              },
+                              {
+                                "type": "emit_expr",
+                                "expression": "var(tool_call).function.name",
+                                "variable_info": {
+                                  "expr_type": "attribute_access",
+                                  "variable_name": "tool_call",
+                                  "attributes": [
+                                    "function",
+                                    "name"
+                                  ],
+                                  "filters": [],
+                                  "tests": [],
+                                  "is_complex": true
+                                }
+                              },
+                              {
+                                "type": "emit_raw",
+                                "content": "</tool_name>\n        <tool_args>",
+                                "preview": "</tool_name>\\n        <tool_..."
+                              },
+                              {
+                                "type": "emit_expr",
+                                "expression": "var(tool_call).function.arguments",
+                                "variable_info": {
+                                  "expr_type": "attribute_access",
+                                  "variable_name": "tool_call",
+                                  "attributes": [
+                                    "function",
+                                    "arguments"
+                                  ],
+                                  "filters": [],
+                                  "tests": [],
+                                  "is_complex": true
+                                }
+                              },
+                              {
+                                "type": "emit_raw",
+                                "content": "</tool_args>\n        </tool_call>\n      ",
+                                "preview": "</tool_args>\\n        </tool..."
+                              }
+                            ]
+                          },
+                          {
+                            "type": "emit_raw",
+                            "content": "\n    ",
+                            "preview": "\\n    "
+                          }
+                        ],
+                        "false_branch": [
+                          {
+                            "type": "emit_raw",
+                            "content": "\n      ",
+                            "preview": "\\n      "
+                          },
+                          {
+                            "type": "emit_expr",
+                            "expression": "var(message).content | escape",
+                            "variable_info": {
+                              "expr_type": "filtered_expression",
+                              "variable_name": "message",
+                              "attributes": [
+                                "content"
+                              ],
+                              "filters": [
+                                "escape"
+                              ],
+                              "tests": [],
+                              "is_complex": true
+                            }
+                          },
+                          {
+                            "type": "emit_raw",
+                            "content": "\n    ",
+                            "preview": "\\n    "
+                          }
+                        ]
+                      },
+                      {
+                        "type": "emit_raw",
+                        "content": "\n    </assistant>\n  ",
+                        "preview": "\\n    </assistant>\\n  "
+                      }
+                    ],
+                    "false_branch": [
+                      {
+                        "type": "if_condition",
+                        "condition": "var(message).role == const(\"tool\")",
+                        "condition_info": {
+                          "expr_type": "other",
+                          "variable_name": null,
+                          "attributes": [],
+                          "filters": [],
+                          "tests": [],
+                          "is_complex": true
+                        },
+                        "true_branch": [
+                          {
+                            "type": "emit_raw",
+                            "content": "\n    <tool>",
+                            "preview": "\\n    <tool>"
+                          },
+                          {
+                            "type": "emit_expr",
+                            "expression": "var(message).content",
+                            "variable_info": {
+                              "expr_type": "attribute_access",
+                              "variable_name": "message",
+                              "attributes": [
+                                "content"
+                              ],
+                              "filters": [],
+                              "tests": [],
+                              "is_complex": true
+                            }
+                          },
+                          {
+                            "type": "emit_raw",
+                            "content": "</tool>\n  ",
+                            "preview": "</tool>\\n  "
+                          }
+                        ],
+                        "false_branch": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "emit_raw",
+            "content": "\n",
+            "preview": "\\n"
+          }
+        ]
+      },
+      {
+        "type": "emit_raw",
+        "content": "\n\n",
+        "preview": "\\n\\n"
+      },
+      {
+        "type": "if_condition",
+        "condition": "var(tools) is defined",
+        "condition_info": {
+          "expr_type": "test_expression",
+          "variable_name": "tools",
+          "attributes": [],
+          "filters": [],
+          "tests": [
+            "defined"
+          ],
+          "is_complex": true
+        },
+        "true_branch": [
+          {
+            "type": "emit_raw",
+            "content": "\n<tools>\n",
+            "preview": "\\n<tools>\\n"
+          },
+          {
+            "type": "for_loop",
+            "target": "Var { id: \"tool\" } @ 30:7-30:11",
+            "iterator": "var(tools)",
+            "iterator_info": {
+              "expr_type": "variable",
+              "variable_name": "tools",
+              "attributes": [],
+              "filters": [],
+              "tests": [],
+              "is_complex": false
+            },
+            "body": [
+              {
+                "type": "emit_raw",
+                "content": "\n  <tool>\n  <tool_name>",
+                "preview": "\\n  <tool>\\n  <tool_name>"
+              },
+              {
+                "type": "emit_expr",
+                "expression": "var(tool).function.name",
+                "variable_info": {
+                  "expr_type": "attribute_access",
+                  "variable_name": "tool",
+                  "attributes": [
+                    "function",
+                    "name"
+                  ],
+                  "filters": [],
+                  "tests": [],
+                  "is_complex": true
+                }
+              },
+              {
+                "type": "emit_raw",
+                "content": "</tool_name>\n  <tool_description>",
+                "preview": "</tool_name>\\n  <tool_descri..."
+              },
+              {
+                "type": "emit_expr",
+                "expression": "var(tool).function.description",
+                "variable_info": {
+                  "expr_type": "attribute_access",
+                  "variable_name": "tool",
+                  "attributes": [
+                    "function",
+                    "description"
+                  ],
+                  "filters": [],
+                  "tests": [],
+                  "is_complex": true
+                }
+              },
+              {
+                "type": "emit_raw",
+                "content": "</tool_description>\n  </tool>\n",
+                "preview": "</tool_description>\\n  </tool>\\n"
+              }
+            ]
+          },
+          {
+            "type": "emit_raw",
+            "content": "\n</tools>\n",
+            "preview": "\\n</tools>\\n"
+          }
+        ],
+        "false_branch": []
+      },
+      {
+        "type": "emit_raw",
+        "content": "\n\n",
+        "preview": "\\n\\n"
+      },
+      {
+        "type": "if_condition",
+        "condition": "var(tool_choice) is defined",
+        "condition_info": {
+          "expr_type": "test_expression",
+          "variable_name": "tool_choice",
+          "attributes": [],
+          "filters": [],
+          "tests": [
+            "defined"
+          ],
+          "is_complex": true
+        },
+        "true_branch": [
+          {
+            "type": "emit_raw",
+            "content": "\n<tool_choice>",
+            "preview": "\\n<tool_choice>"
+          },
+          {
+            "type": "emit_expr",
+            "expression": "var(tool_choice)",
+            "variable_info": {
+              "expr_type": "variable",
+              "variable_name": "tool_choice",
+              "attributes": [],
+              "filters": [],
+              "tests": [],
+              "is_complex": false
+            }
+          },
+          {
+            "type": "emit_raw",
+            "content": "</tool_choice>\n",
+            "preview": "</tool_choice>\\n"
+          }
+        ],
+        "false_branch": []
+      },
+      {
+        "type": "emit_raw",
+        "content": "\n\n",
+        "preview": "\\n\\n"
+      },
+      {
+        "type": "if_condition",
+        "condition": "var(response_format) is defined",
+        "condition_info": {
+          "expr_type": "test_expression",
+          "variable_name": "response_format",
+          "attributes": [],
+          "filters": [],
+          "tests": [
+            "defined"
+          ],
+          "is_complex": true
+        },
+        "true_branch": [
+          {
+            "type": "emit_raw",
+            "content": "\n<response_format>",
+            "preview": "\\n<response_format>"
+          },
+          {
+            "type": "emit_expr",
+            "expression": "var(response_format).type",
+            "variable_info": {
+              "expr_type": "attribute_access",
+              "variable_name": "response_format",
+              "attributes": [
+                "type"
+              ],
+              "filters": [],
+              "tests": [],
+              "is_complex": true
+            }
+          },
+          {
+            "type": "emit_raw",
+            "content": "</response_format>\n",
+            "preview": "</response_format>\\n"
+          }
+        ],
+        "false_branch": []
+      },
+      {
+        "type": "emit_raw",
+        "content": "\n\n",
+        "preview": "\\n\\n"
+      },
+      {
+        "type": "if_condition",
+        "condition": "var(add_generation_prompt) is defined",
+        "condition_info": {
+          "expr_type": "test_expression",
+          "variable_name": "add_generation_prompt",
+          "attributes": [],
+          "filters": [],
+          "tests": [
+            "defined"
+          ],
+          "is_complex": true
+        },
+        "true_branch": [
+          {
+            "type": "emit_raw",
+            "content": "\n<assistant>\n",
+            "preview": "\\n<assistant>\\n"
+          }
+        ],
+        "false_branch": []
+      },
+      {
+        "type": "emit_raw",
+        "content": "\n\n\n",
+        "preview": "\\n\\n\\n"
+      },
+      {
+        "type": "if_condition",
+        "condition": "var(eos_token) is defined",
+        "condition_info": {
+          "expr_type": "test_expression",
+          "variable_name": "eos_token",
+          "attributes": [],
+          "filters": [],
+          "tests": [
+            "defined"
+          ],
+          "is_complex": true
+        },
+        "true_branch": [
+          {
+            "type": "emit_expr",
+            "expression": "var(eos_token)",
+            "variable_info": {
+              "expr_type": "variable",
+              "variable_name": "eos_token",
+              "attributes": [],
+              "filters": [],
+              "tests": [],
+              "is_complex": false
+            }
+          }
+        ],
+        "false_branch": []
+      }
+    ]
+  },
+  "statistics": {
+    "total_instructions": 63,
+    "raw_emissions": 34,
+    "expression_emissions": 13,
+    "conditionals": 12,
+    "loops": 3,
+    "other_operations": 0,
+    "max_nesting_depth": 7
+  },
+  "rendered_output": null
+}

@@ -1,0 +1,52 @@
+{% if bos_token is defined %}{{ bos_token }}{% endif %}
+
+{% if date_string is defined %}{{ date_string }}{% endif %}
+
+{% for message in messages %}
+  {% if message.role == "system" %}
+    <system>{{ message.content | escape }}</system>
+  {% elif message.role == "user" %}
+    <user>{{ message.content | escape }}</user>
+  {% elif message['role'] == "assistant" %}
+    <assistant>
+    {% if messages.tool_calls is defined %}
+      {% for tool_call in message.tool_calls %}
+        <tool_call>
+        <tool_name>{{ tool_call.function.name }}</tool_name>
+        <tool_args>{{ tool_call.function.arguments }}</tool_args>
+        </tool_call>
+      {% endfor %}
+    {% else %}
+      {{ message.content | escape }}
+    {% endif %}
+    </assistant>
+  {% elif message.role == "tool" %}
+    <tool>{{ message.content }}</tool>
+  {% endif %}
+{% endfor %}
+
+{% if tools is defined %}
+<tools>
+{% for tool in tools %}
+  <tool>
+  <tool_name>{{ tool.function.name }}</tool_name>
+  <tool_description>{{ tool.function.description }}</tool_description>
+  </tool>
+{% endfor %}
+</tools>
+{% endif %}
+
+{% if tool_choice is defined %}
+<tool_choice>{{ tool_choice }}</tool_choice>
+{% endif %}
+
+{% if response_format is defined %}
+<response_format>{{ response_format.type }}</response_format>
+{% endif %}
+
+{% if add_generation_prompt is defined %}
+<assistant>
+{% endif %}
+
+
+{% if eos_token is defined %}{{ eos_token }}{% endif %}
